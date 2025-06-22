@@ -10,7 +10,7 @@
             margin: 20px;
             background-color: #f5f5f5;
         }
-        
+
         .container {
             max-width: 1200px;
             margin: 0 auto;
@@ -19,13 +19,13 @@
             border-radius: 8px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
-        
+
         h1 {
             text-align: center;
             color: #333;
             margin-bottom: 30px;
         }
-        
+
         button {
             background: #007bff;
             color: white;
@@ -36,22 +36,22 @@
             font-size: 16px;
             margin-bottom: 20px;
         }
-        
+
         button:hover {
             background: #0056b3;
         }
-        
+
         button:disabled {
             background: #ccc;
             cursor: not-allowed;
         }
-        
+
         .loading {
             text-align: center;
             padding: 20px;
             color: #007bff;
         }
-        
+
         .error {
             background: #f8d7da;
             border: 1px solid #f5c6cb;
@@ -60,46 +60,47 @@
             border-radius: 4px;
             margin-bottom: 20px;
         }
-        
+
         table {
             width: 100%;
             border-collapse: collapse;
             margin-top: 20px;
         }
-        
+
         th, td {
             padding: 12px;
             text-align: left;
             border-bottom: 1px solid #ddd;
+            cursor: pointer;
         }
-        
+
         th {
             background-color: #f8f9fa;
             font-weight: bold;
         }
-        
+
         tbody tr:hover {
             background-color: #f5f5f5;
         }
-        
+
         .task-id {
             font-family: monospace;
             font-size: 12px;
         }
-        
+
         .webhook {
             max-width: 200px;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
-        
+
         .stats {
             display: flex;
             gap: 20px;
             margin-bottom: 20px;
         }
-        
+
         .stat {
             background: #e9ecef;
             padding: 15px;
@@ -107,7 +108,7 @@
             text-align: center;
             flex: 1;
         }
-        
+
         .stat-number {
             font-size: 24px;
             font-weight: bold;
@@ -118,30 +119,30 @@
 <body>
     <div class="container">
         <h1>Scheduler Tasks</h1>
-        
+
         <button onclick="loadData()">Load Tasks</button>
-        
+
         <div id="stats" class="stats" style="display: none;">
             <div class="stat">
                 <div class="stat-number" id="totalTasks">0</div>
                 <div>Total Tasks</div>
             </div>
         </div>
-        
+
         <div id="loading" class="loading" style="display: none;">
             Loading...
         </div>
-        
+
         <div id="error" class="error" style="display: none;"></div>
-        
+
         <table id="tasksTable" style="display: none;">
             <thead>
                 <tr>
-                    <th>Task ID</th>
-                    <th>Next Execution</th>
-                    <th>Webhook</th>
-                    <th>Days Before Trial</th>
-                    <th>Email</th>
+                    <th onclick="sortTable('taskId')">Task ID</th>
+                    <th onclick="sortTable('nextExecution')">Next Execution ▲</th>
+                    <th onclick="sortTable('webhook')">Webhook</th>
+                    <th onclick="sortTable('days_before_trial_ends')">Days Before Trial</th>
+                    <th onclick="sortTable('email')">Email</th>
                 </tr>
             </thead>
             <tbody id="taskTableBody">
@@ -150,41 +151,41 @@
     </div>
 
     <script>
+        let currentSort = {
+            column: 'nextExecution',
+            direction: 'asc'
+        };
+
         async function loadData() {
             showLoading(true);
             hideError();
-            
+
             try {
                 const response = await fetch('/api/scheduler/list');
 
-                console.log(response.status)
-                
                 if (!response.ok) {
                     throw new Error(`Error: ${response.status}`);
                 }
-                
-                const data = await response.json();
-                console.log(data);
-                
-                
-                    if (data && Array.isArray(data.tasks) && data.tasks.length > 0) {
-            displayTasks(data.tasks);
-        } else {
-            showError('No tasks found');
-        }
 
-                
+                const data = await response.json();
+
+                if (data && Array.isArray(data.tasks) && data.tasks.length > 0) {
+                    displayTasks(data.tasks);
+                } else {
+                    showError('No tasks found');
+                }
+
             } catch (error) {
                 showError(`Failed to load: ${error.message}`);
             } finally {
                 showLoading(false);
             }
         }
-        
+
         function displayTasks(tasks) {
             const tbody = document.getElementById('taskTableBody');
             tbody.innerHTML = '';
-            
+
             tasks.forEach(task => {
                 let parsedData = {};
                 try {
@@ -192,7 +193,7 @@
                 } catch (e) {
                     console.warn('Failed to parse data:', task.data);
                 }
-                
+
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td class="task-id">${task.taskId}</td>
@@ -203,25 +204,72 @@
                 `;
                 tbody.appendChild(row);
             });
-            
+
             document.getElementById('totalTasks').textContent = tasks.length;
             document.getElementById('stats').style.display = 'flex';
             document.getElementById('tasksTable').style.display = 'table';
+
+            autoSortAfterDisplay();
         }
-        
+
+        function sortTable(column) {
+            const direction = (currentSort.column === column && currentSort.direction === 'asc') ? 'desc' : 'asc';
+            currentSort = { column, direction };
+
+            const headers = document.querySelectorAll('thead th');
+            headers.forEach(header => {
+                const headerText = header.textContent.replace(/[\u25B2\u25BC]/g, '').trim();
+                if (headerText.toLowerCase().includes(column.toLowerCase())) {
+                    header.innerHTML = `${headerText} ${direction === 'asc' ? '▲' : '▼'}`;
+                } else {
+                    header.innerHTML = headerText;
+                }
+            });
+
+            const rows = Array.from(document.querySelectorAll('#taskTableBody tr'));
+            const getValue = (row) => {
+                const cells = row.children;
+                switch (column) {
+                    case 'taskId': return cells[0].textContent.trim();
+                    case 'nextExecution': return new Date(cells[1].textContent.trim()).getTime();
+                    case 'webhook': return cells[2].textContent.trim();
+                    case 'days_before_trial_ends': return parseInt(cells[3].textContent.trim()) || 0;
+                    case 'email': return cells[4].textContent.trim();
+                    default: return '';
+                }
+            };
+
+            rows.sort((a, b) => {
+                const aVal = getValue(a);
+                const bVal = getValue(b);
+                if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+                if (aVal > bVal) return direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+
+            const tbody = document.getElementById('taskTableBody');
+            tbody.innerHTML = '';
+            rows.forEach(row => tbody.appendChild(row));
+        }
+
+        function autoSortAfterDisplay() {
+            sortTable('nextExecution');
+        }
+
         function showLoading(show) {
             document.getElementById('loading').style.display = show ? 'block' : 'none';
         }
-        
+
         function showError(message) {
             const errorDiv = document.getElementById('error');
             errorDiv.textContent = message;
             errorDiv.style.display = 'block';
         }
-        
+
         function hideError() {
             document.getElementById('error').style.display = 'none';
         }
     </script>
 </body>
 </html>
+
