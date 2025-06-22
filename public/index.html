@@ -120,6 +120,11 @@
     <div class="container">
         <h1>Scheduler Tasks</h1>
 
+        <label style="display: inline-flex; align-items: center; margin-bottom: 10px;">
+            <input type="checkbox" id="groupByEmail" onchange="toggleGroupByEmail()" style="margin-right: 8px;">
+            Group by Email
+        </label>
+
         <button onclick="loadData()">Load Tasks</button>
 
         <div id="stats" class="stats" style="display: none;">
@@ -156,25 +161,29 @@
             direction: 'asc'
         };
 
+        let allTasks = [];
+
+        function toggleGroupByEmail() {
+            if (allTasks.length > 0) {
+                displayTasks(allTasks);
+            }
+        }
+
         async function loadData() {
             showLoading(true);
             hideError();
 
             try {
                 const response = await fetch('/api/scheduler/list');
-
-                if (!response.ok) {
-                    throw new Error(`Error: ${response.status}`);
-                }
+                if (!response.ok) throw new Error(`Error: ${response.status}`);
 
                 const data = await response.json();
-
                 if (data && Array.isArray(data.tasks) && data.tasks.length > 0) {
-                    displayTasks(data.tasks);
+                    allTasks = data.tasks;
+                    displayTasks(allTasks);
                 } else {
                     showError('No tasks found');
                 }
-
             } catch (error) {
                 showError(`Failed to load: ${error.message}`);
             } finally {
@@ -183,33 +192,67 @@
         }
 
         function displayTasks(tasks) {
+            const groupByEmail = document.getElementById('groupByEmail').checked;
             const tbody = document.getElementById('taskTableBody');
             tbody.innerHTML = '';
 
-            tasks.forEach(task => {
+            const parsedTasks = tasks.map(task => {
                 let parsedData = {};
                 try {
                     parsedData = JSON.parse(task.data);
                 } catch (e) {
                     console.warn('Failed to parse data:', task.data);
                 }
-
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td class="task-id">${task.taskId}</td>
-                    <td>${new Date(task.nextExecution).toLocaleString()}</td>
-                    <td class="webhook" title="${task.webhook}">${task.webhook}</td>
-                    <td>${parsedData.days_before_trial_ends || 'N/A'}</td>
-                    <td>${parsedData.email || 'N/A'}</td>
-                `;
-                tbody.appendChild(row);
+                return {
+                    ...task,
+                    parsedData
+                };
             });
+
+            if (groupByEmail) {
+                const grouped = parsedTasks.reduce((acc, task) => {
+                    const email = task.parsedData.email || 'N/A';
+                    if (!acc[email]) acc[email] = [];
+                    acc[email].push(task);
+                    return acc;
+                }, {});
+
+                Object.keys(grouped).sort().forEach(email => {
+                    const header = document.createElement('tr');
+                    header.innerHTML = `<td colspan="5" style="font-weight: bold; background: #e2e6ea;">${email}</td>`;
+                    tbody.appendChild(header);
+
+                    grouped[email].forEach(task => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td class="task-id">${task.taskId}</td>
+                            <td>${new Date(task.nextExecution).toLocaleString()}</td>
+                            <td class="webhook" title="${task.webhook}">${task.webhook}</td>
+                            <td>${task.parsedData.days_before_trial_ends || 'N/A'}</td>
+                            <td>${task.parsedData.email || 'N/A'}</td>
+                        `;
+                        tbody.appendChild(row);
+                    });
+                });
+            } else {
+                parsedTasks.forEach(task => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td class="task-id">${task.taskId}</td>
+                        <td>${new Date(task.nextExecution).toLocaleString()}</td>
+                        <td class="webhook" title="${task.webhook}">${task.webhook}</td>
+                        <td>${task.parsedData.days_before_trial_ends || 'N/A'}</td>
+                        <td>${task.parsedData.email || 'N/A'}</td>
+                    `;
+                    tbody.appendChild(row);
+                });
+
+                autoSortAfterDisplay();
+            }
 
             document.getElementById('totalTasks').textContent = tasks.length;
             document.getElementById('stats').style.display = 'flex';
             document.getElementById('tasksTable').style.display = 'table';
-
-            autoSortAfterDisplay();
         }
 
         function sortTable(column) {
@@ -226,7 +269,9 @@
                 }
             });
 
-            const rows = Array.from(document.querySelectorAll('#taskTableBody tr'));
+            if (document.getElementById('groupByEmail').checked) return; // skip sorting when grouped
+
+            const rows = Array.from(document.querySelectorAll('#taskTableBody tr')).filter(row => !row.firstChild.colSpan);
             const getValue = (row) => {
                 const cells = row.children;
                 switch (column) {
@@ -272,4 +317,3 @@
     </script>
 </body>
 </html>
-
